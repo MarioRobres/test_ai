@@ -14,11 +14,11 @@ jobs:
       issues: read
 
     outputs:
-      release_note: ${{ steps.generate_note.outputs.release_note }}
-      target_issue: ${{ steps.extract_metadata.outputs.issue_number }}
+      release_note: ${{ steps.generate_note.outputs.final-message }}
+      target_issue: ${{ fromJson(steps.parse_pr.outputs.final-message).issue_number }}
       pr_number: ${{ steps.pr_context.outputs.pr_number }}
-      issue_type: ${{ steps.extract_metadata.outputs.issue_type }}
-      target_branches: ${{ steps.extract_metadata.outputs.target_branches }}
+      issue_type: ${{ fromJson(steps.parse_pr.outputs.final-message).issue_type }}
+      target_branches: ${{ toJSON(fromJson(steps.parse_pr.outputs.final-message).target_branches) }}
 
     steps:
       - name: Checkout Repo
@@ -41,27 +41,19 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
-          output-file: metadata.json
           prompt: |
             Go to .codex/skills/parse-pr-metadata/SKILL.md and follow its instructions to extract the metadata.
             Here is the pull request payload to evaluate:
             $(cat pr_data.json)
 
-            Output ONLY valid JSON to the file.
-
-      - name: Extract AI Metadata to Outputs
-        id: extract_metadata
-        run: |
-          echo "issue_number=$(jq -r .issue_number metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "issue_type=$(jq -r .issue_type metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "target_branches=$(jq -c .target_branches metadata.json)" >> "$GITHUB_OUTPUT"
+            Output ONLY valid JSON without markdown code blocks.
 
       - name: Fetch Original Issue Content
         id: fetch_issue
         env:
           GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
         run: |
-          ISSUE_NUM="${{ steps.extract_metadata.outputs.issue_number }}"
+          ISSUE_NUM="${{ fromJson(steps.parse_pr.outputs.final-message).issue_number }}"
           gh issue view "$ISSUE_NUM" --repo MarioRobres/test --json body --jq .body > issue_body.txt
 
       - name: Generate Release Note (AI Action)
@@ -71,22 +63,10 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
-          output-file: release_note.txt
           prompt: |
             Go to .codex/skills/generate-release-notes.md and follow its instructions.
             Here is the original issue description to base the note on:
             $(cat issue_body.txt)
-
-      - name: Extract Release Note to Output
-        id: extract_note
-        run: |
-          # Using a multiline EOF delimiter is the safest way to pass AI-generated 
-          # text into GitHub outputs without breaking bash syntax.
-          {
-            echo 'release_note<<EOF'
-            cat release_note.txt
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
 
   public_release_notes:
     needs: prepare_and_generate
