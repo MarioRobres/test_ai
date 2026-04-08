@@ -42,7 +42,7 @@ jobs:
         id: parse_pr
         uses: openai/codex-action@v1
         with:
-          openai-api-key: ${{ secrets.AI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
           output-file: metadata.json
@@ -72,7 +72,7 @@ jobs:
         id: generate_note
         uses: openai/codex-action@v1
         with:
-          openai-api-key: ${{ secrets.AI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
           prompt: |
@@ -102,7 +102,7 @@ jobs:
         id: config_ai
         uses: openai/codex-action@v1
         with:
-          openai-api-key: ${{ secrets.AI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
           working-directory: ./one-ee
@@ -130,7 +130,7 @@ jobs:
         id: smart_append
         uses: openai/codex-action@v1
         with:
-          openai-api-key: ${{ secrets.AI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: workspace-write
           prompt: |
