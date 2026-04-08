@@ -1,0 +1,177 @@
+name: Generate Release Notes
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize]
+  workflow_dispatch:
+
+jobs:
+  prepare_and_generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+
+    outputs:
+      release_note: ${{ steps.generate_note.outputs.release_note }}
+      target_issue: ${{ steps.parse_pr.outputs.issue_number }}
+      pr_number: ${{ steps.pr_context.outputs.pr_number }}
+      issue_type: ${{ steps.parse_pr.outputs.issue_type }}
+      target_branches: ${{ steps.parse_pr.outputs.target_branches }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v5
+
+      - name: Gather PR Context
+        id: pr_context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            PR_REF=${{ github.ref_name }}
+          else
+            PR_REF=${{ github.event.pull_request.number }}
+          fi
+
+          gh pr view $PR_REF --repo ${{ github.repository }} --json number,body,title,headRefName > pr_data.json
+          echo "pr_number=$(jq -r .number pr_data.json)" >> $GITHUB_OUTPUT
+
+      - name: Parse PR Metadata (AI Action)
+        id: parse_pr
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.AI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: read-only
+          output-file: metadata.json
+          prompt: |
+            Go to .codex/skills/parse-pr-metadata.md and follow its instructions to extract the metadata.
+            Here is the pull request payload to evaluate:
+            $(cat pr_data.json)
+
+            Output ONLY valid JSON to the file.
+
+      - name: Extract AI Metadata to Outputs
+        id: extract_metadata
+        run: |
+          echo "issue_number=$(jq -r .issue_number metadata.json)" >> $GITHUB_OUTPUT
+          echo "issue_type=$(jq -r .issue_type metadata.json)" >> $GITHUB_OUTPUT
+          echo "target_branches=$(jq -c .target_branches metadata.json)" >> $GITHUB_OUTPUT
+
+      - name: Fetch Original Issue Content
+        id: fetch_issue
+        env:
+          GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
+        run: |
+          ISSUE_NUM="${{ steps.parse_pr.outputs.issue_number }}"
+          gh issue view "$ISSUE_NUM" --repo MarioRobres/test --json body --jq .body > issue_body.txt
+
+      - name: Generate Release Note (AI Action)
+        id: generate_note
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.AI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: read-only
+          prompt: |
+            Go to .codex/skills/generate-release-notes.md and follow its instructions.
+            Here is the original issue description to base the note on:
+            $(cat issue_body.txt)
+
+  public_release_notes:
+    needs: prepare_and_generate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    strategy:
+      matrix:
+        target_branch: ${{ fromJson(needs.prepare_and_generate.outputs.target_branches) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout Source Repo (Contains .codex/skills)
+        uses: actions/checkout@v5
+        with:
+          path: one-ee
+
+      - name: Determine Repository & Config (AI Action)
+        id: config_ai
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.AI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: read-only
+          working-directory: ./one-ee
+          output-file: config.json
+          prompt: |
+            Go to .codex/skills/determine-docs-target.md and use it to map the config.
+            The Target branch is: ${{ matrix.target_branch }}
+
+            Output ONLY valid JSON to the file.
+
+      - name: Extract AI Config
+        id: config
+        run: |
+          echo "repo=$(jq -r .repo source_repo/config.json)" >> $GITHUB_OUTPUT
+          echo "base_branch=$(jq -r .base_branch source_repo/config.json)" >> $GITHUB_OUTPUT
+
+      - name: Checkout Public Docs Repository
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.config.outputs.repo }}
+          ref: ${{ steps.config.outputs.base_branch }}
+          token: ${{  secrets.OPENNEBULA_CI_TOKEN }}
+
+      - name: Smart Append Release Note (AI Action)
+        id: smart_append
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.AI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+          prompt: |
+            Go to ./one-ee/.codex/skills/smart-append-release-note.md and follow its instructions to append the release note inside this workspace.
+
+            Context:
+            Target Branch: ${{ matrix.target_branch }}
+            Issue Number: ${{ needs.prepare_and_generate.outputs.target_issue }}
+            Release Note: ${{ needs.prepare_and_generate.outputs.release_note }}
+
+      - name: Commit and Create PR
+        env:
+          GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
+          ISSUE_TYPE: ${{ needs.prepare_and_generate.outputs.issue_type }}
+          TARGET_ISSUE: ${{ needs.prepare_and_generate.outputs.target_issue }}
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+          PR_NUMBER: ${{ needs.prepare_and_generate.outputs.pr_number }}
+          BASE_BRANCH: ${{ steps.config.outputs.base_branch }}
+          REPO: ${{ steps.config.outputs.repo }}
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No changes detected. Skipping PR."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH_NAME="${ISSUE_TYPE}-${TARGET_ISSUE}-${TARGET_BRANCH}"
+          git checkout -b "$BRANCH_NAME"
+
+          TYPE_UPPER=$(echo "$ISSUE_TYPE" | tr '[:lower:]' '[:upper:]')
+          TITLE="$TYPE_UPPER MarioRobres/test#$TARGET_ISSUE: add release notes for $TARGET_BRANCH"
+
+          git add .
+          git commit -m "$TITLE"
+          git push origin "$BRANCH_NAME"
+
+          gh pr create \
+            --repo "$REPO" \
+            --title "$TITLE" \
+            --body "Auto-generated release notes for PR #$PR_NUMBER in $TARGET_BRANCH" \
+            --head "$BRANCH_NAME" \
+            --base "$BASE_BRANCH"
