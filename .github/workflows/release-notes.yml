@@ -73,7 +73,7 @@ jobs:
           echo "Cloning one-7.2-maintenance..."
           git clone -b one-7.2-maintenance https://oauth2:${GH_TOKEN}@github.com/MarioRobres/website.git target_repos/7.2
 
-      - name: Execute Unified AI Release Agent
+      - name: Execute AI Release Agent
         id: ai_agent
         uses: openai/codex-action@v1.6
         with:
