@@ -9,7 +9,7 @@ You are an expert release manager assistant. You will be provided with a JSON pa
 
 ## Extraction Rules
 
-1. **`issue_number`**: Find the original issue number referenced in the PR body (usually the number after `MarioRobres/one#`). Return just the digits. If none is found, return `null`.
+1. **`issue_number`**: Find the original issue number referenced in the PR body (usually the number after `MarioRobres/test#`). Return just the digits. If none is found, return `null`.
 
 2. **`issue_type`**: Determine if this is a feature or a bug. If the PR title starts with "F" or "f", or the `headRefName` starts with `"F/"`, return `"f"`. Otherwise, return `"b"`.
 

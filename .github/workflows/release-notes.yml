@@ -1,0 +1,145 @@
+name: Generate Release Notes
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize]
+  workflow_dispatch:
+
+jobs:
+  process_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+
+    steps:
+      - name: Checkout Source Repo (Contains SKILLS)
+        uses: actions/checkout@v5
+        with:
+          path: main-repo
+
+      - name: Gather PR and Issue Context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_REF="${{ github.event_name == 'workflow_dispatch' && github.ref_name || github.event.pull_request.number }}"
+          gh pr view "$PR_REF" --repo ${{ github.repository }} --json number,body,title > pr_data.json
+
+          PR_TITLE=$(jq -r .title pr_data.json)
+          PR_BODY=$(jq -r .body pr_data.json)
+          PR_NUMBER=$(jq -r .number pr_data.json)
+
+          # Extract Issue Number
+          ISSUE_NUM=$(echo "$PR_TITLE" | grep -oP 'MarioRobres/test#\K\d+' || true)
+          if [ -z "$ISSUE_NUM" ]; then
+            ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'MarioRobres/test#\K\d+' | head -n 1 || true)
+          fi
+
+          # Fetch Issue Content
+          gh issue view "$ISSUE_NUM" --repo MarioRobres/test --json body --jq .body > issue_body.txt
+
+          # Export variables for the AI
+          {
+            echo 'pr_title<<EOF'
+            echo "$PR_TITLE"
+            echo EOF
+
+            echo 'pr_body<<EOF'
+            echo "$PR_BODY"
+            echo EOF
+
+            echo 'issue_body<<EOF'
+            cat issue_body.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "issue_num=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Clone Active Release Repositories
+        env:
+          GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
+        run: |
+          mkdir -p target_repos
+
+          echo "Cloning master..."
+          git clone -b master https://oauth2:${GH_TOKEN}@github.com/MarioRobres/website.git target_repos/master
+
+          echo "Cloning one-6.10-maintenance..."
+          git clone -b one-6.10-maintenance https://oauth2:${GH_TOKEN}@github.com/MarioRobres/docs.git target_repos/6.10
+
+          echo "Cloning one-7.2-maintenance..."
+          git clone -b one-7.2-maintenance https://oauth2:${GH_TOKEN}@github.com/MarioRobres/website.git target_repos/7.2
+
+      - name: Execute Unified AI Release Agent
+        id: ai_agent
+        uses: openai/codex-action@v1.6
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          model: gpt-4o-mini
+          prompt: |
+            Go to ./main-repo/.codex/skills/process-release-notes.md and follow its instructions to process the workspace.
+
+            ### CONTEXT ###
+            ISSUE_NUMBER: ${{ steps.context.outputs.issue_num }}
+            PR_TITLE: ${{ steps.context.outputs.pr_title }}
+
+            PR_BODY:
+            ${{ steps.context.outputs.pr_body }}
+
+            ISSUE_BODY:
+            ${{ steps.context.outputs.issue_body }}
+
+      - name: Commit and Create PRs for Modified Repos
+        env:
+          GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
+          TARGET_ISSUE: ${{ steps.context.outputs.issue_num }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          AI_JSON: ${{ steps.ai_agent.outputs.final-message }}
+        run: |
+          # If the AI didn't modify anything
+          if [[ -z "$AI_JSON" || "$AI_JSON" == "[]" ]]; then
+            echo "No repositories require updates."
+            exit 0
+          fi
+
+          echo "$AI_JSON" | jq -c '.[]' | while read i; do
+            TARGET_BRANCH=$(echo "$i" | jq -r .branch)
+            PATH_DIR=$(echo "$i" | jq -r .path)
+            REPO=$(echo "$i" | jq -r .repo_name)
+            BASE_BRANCH=$(echo "$i" | jq -r .base_branch)
+            ISSUE_TYPE=$(echo "$i" | jq -r .issue_type)
+
+            echo "Processing modifications in $TARGET_BRANCH ($PATH_DIR)..."
+            cd "$PATH_DIR"
+
+            if [[ -n "$(git status --porcelain)" ]]; then
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+
+              BRANCH_NAME="${ISSUE_TYPE}-${TARGET_ISSUE}-${TARGET_BRANCH}"
+              git checkout -b "$BRANCH_NAME"
+
+              TYPE_UPPER=$(echo "$ISSUE_TYPE" | tr '[:lower:]' '[:upper:]')
+              TITLE="$TYPE_UPPER MarioRobres/test#$TARGET_ISSUE: add release notes for $TARGET_BRANCH"
+
+              git add .
+              git commit -m "$TITLE"
+              git push origin "$BRANCH_NAME"
+
+              gh pr create \
+                --repo "$REPO" \
+                --title "$TITLE" \
+                --body "Auto-generated release notes for PR #$PR_NUMBER in $TARGET_BRANCH" \
+                --head "$BRANCH_NAME" \
+                --base "$BASE_BRANCH"
+            else
+              echo "AI claimed modifications, but git status is clean. Skipping PR for $TARGET_BRANCH."
+            fi
+
+            # Navigate back to root workspace for the next loop iteration
+            cd -
+          done
