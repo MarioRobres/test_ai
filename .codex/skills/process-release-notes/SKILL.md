@@ -33,6 +33,8 @@ Read the ISSUE BODY and summarize the core change into exactly ONE sentence.
 ## Step 3: Append & Deduplicate Locally
 You have up to three folders in `./target_repos/` corresponding to the available branches (e.g., `master`, `6.10`, `7.2`).
 
+**CRITICAL VALIDATION:** For each target branch identified in Step 1, verify that a corresponding folder actually exists in `./target_repos/`. If a branch version (e.g., `5.4`) does not have a matching folder, you MUST skip it entirely.
+
 **ONLY process the folders that match the target branches selected in Step 1.** For each selected branch folder:
 
 1. **Locate the File:**
