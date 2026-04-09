@@ -79,7 +79,7 @@ jobs:
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           sandbox: workspace-write
-          model: gpt-4o-mini
+          model: gpt-5.4-mini
           prompt: |
             Use the SKILL `process-release-notes` (in ./main-repo/.codex/skills/process-release-notes/SKILL.md) and follow its instructions to process the workspace.
 
