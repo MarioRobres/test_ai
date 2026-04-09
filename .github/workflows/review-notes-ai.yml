@@ -41,6 +41,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
           sandbox: read-only
+          model: gpt-5.4-mini
           prompt: |
             Go to .codex/skills/parse-pr-metadata/SKILL.md and follow its instructions to extract the metadata.
             Here is the pull request payload to evaluate:
@@ -59,6 +60,7 @@ jobs:
       - name: Generate Release Note (AI Action)
         id: generate_note
         uses: openai/codex-action@v1
+        model: gpt-5.4-mini
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
@@ -120,6 +122,7 @@ jobs:
           safety-strategy: drop-sudo
           sandbox: workspace-write
           working-directory: ./documentation
+          model: gpt-5.4-mini
           prompt: |
             Go to ../one-ee/.codex/skills/smart-append-release-note.md and follow its instructions to append the release note inside this workspace.
 
