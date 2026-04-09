@@ -36,7 +36,7 @@ jobs:
 
       - name: Parse PR Metadata (AI Action)
         id: parse_pr
-        uses: openai/codex-action@v1
+        uses: openai/codex-action@v1.6
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo
@@ -59,7 +59,7 @@ jobs:
 
       - name: Generate Release Note (AI Action)
         id: generate_note
-        uses: openai/codex-action@v1
+        uses: openai/codex-action@v1.6
         model: gpt-5.4-mini
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -116,7 +116,7 @@ jobs:
 
       - name: Smart Append Release Note (AI Action)
         id: smart_append
-        uses: openai/codex-action@v1
+        uses: openai/codex-action@v1.6
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           safety-strategy: drop-sudo

@@ -36,7 +36,7 @@ jobs:
           allow-users: MarioRobres
           safety-strategy: drop-sudo
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          model: gpt-5.4-mini
+          model: gpt-5.4
           prompt: |
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
 
