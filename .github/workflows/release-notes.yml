@@ -58,7 +58,7 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "issue_num=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
 
-      - name: Clone Active Release Repositories
+      - name: Clone Documentation Repositories
         env:
           GH_TOKEN: ${{ secrets.OPENNEBULA_CI_TOKEN }}
         run: |
@@ -120,26 +120,44 @@ jobs:
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
 
-              BRANCH_NAME="${ISSUE_TYPE}-${TARGET_ISSUE}-${TARGET_BRANCH}"
-              git checkout -b "$BRANCH_NAME"
+              BASE_NAME="${ISSUE_TYPE}-${TARGET_ISSUE}"
+
+              CHAR_CODE=98
+
+              while true; do
+                SUFFIX=$(printf "\\$(printf '%03o' "$CHAR_CODE")")
+                FINAL_BRANCH_NAME="${BASE_NAME}${SUFFIX}-${TARGET_BRANCH}"
+
+                if ! git ls-remote --exit-code --heads origin "$FINAL_BRANCH_NAME"; then
+                  break
+                fi
+
+                ((CHAR_CODE++))
+                if [ "$CHAR_CODE" -gt 122 ]; then
+                  echo "Error: Too many branch iterations (a-z) for this issue."
+                  exit 1
+                fi
+              done
+
+              echo "Using branch name: $FINAL_BRANCH_NAME"
+              git checkout -b "$FINAL_BRANCH_NAME"
 
               TYPE_UPPER=$(echo "$ISSUE_TYPE" | tr '[:lower:]' '[:upper:]')
               TITLE="$TYPE_UPPER MarioRobres/test#$TARGET_ISSUE: add release notes for $TARGET_BRANCH"
 
               git add .
               git commit -m "$TITLE"
-              git push origin "$BRANCH_NAME"
+              git push origin "$FINAL_BRANCH_NAME"
 
               gh pr create \
                 --repo "$REPO" \
                 --title "$TITLE" \
-                --body "Auto-generated release notes for PR #$PR_NUMBER in $TARGET_BRANCH" \
-                --head "$BRANCH_NAME" \
+                --body "Auto-generated release notes for PR #$PR_NUMBER in $TARGET_BRANCH. Iteration suffix: $SUFFIX" \
+                --head "$FINAL_BRANCH_NAME" \
                 --base "$BASE_BRANCH"
             else
               echo "AI claimed modifications, but git status is clean. Skipping PR for $TARGET_BRANCH."
             fi
 
-            # Navigate back to root workspace for the next loop iteration
             cd -
           done
