@@ -35,9 +35,9 @@ jobs:
           COMMIT_MSG=$(git -C one-ee log -1 --pretty=format:%B)
           DIFF_CONTENT=$(git -C one-ee show HEAD | head -c 15000)
 
-          ISSUE_NUM=$(echo "$COMMIT_MSG" | grep -oP 'MarioRobres/test#\K\d+' | head -n 1 || echo "N/A")
+          ISSUE_NUM=$(echo "$COMMIT_MSG" | grep -oP 'MarioRobres/test#\K\d+' | head -n 1)
 
-          if [[ "$ISSUE_NUM" == "N/A" ]]; then
+          if [[ -z "$ISSUE_NUM" ]]; then
             echo "No issue referenced in the commit message. Skipping workflow."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
