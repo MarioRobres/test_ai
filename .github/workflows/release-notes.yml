@@ -135,15 +135,14 @@ jobs:
             git push origin "$FINAL_BRANCH_NAME"
 
             PR_BODY_TEXT="Auto-generated release notes for Issue #${TARGET_ISSUE} in ${TARGET_BRANCH}."
-
-            if [[ -n "$DOC_LINKS" ]]; then
-              PR_BODY_TEXT="$PR_BODY_TEXT\n\n### Potential Documentation Link(s):\n$DOC_LINKS\n\n*Reviewer: Please verify if this hyperlink is accurate.*"
-            fi
+            PR_BODY_TEXT+=$'\n\n### Potential Documentation Link(s):\n'
+            PR_BODY_TEXT+="${DOC_LINKS:-None provided}"
+            PR_BODY_TEXT+=$'\n\n*Reviewer: Please verify if this hyperlink is accurate.*'
 
             gh pr create \
               --repo "MarioRobres/website" \
               --title "$TITLE" \
-              --body - <<< $(echo -e "$PR_BODY_TEXT") \
+              --body "$PR_BODY_TEXT" \
               --head "$FINAL_BRANCH_NAME" \
               --base "$TARGET_BRANCH"
           else
